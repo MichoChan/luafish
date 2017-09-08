@@ -43,13 +43,24 @@ local function checkvar(a, p)
   return true
 end
 
+local function getfiled(f)
+  local v = _G
+  for w in string,gmatch(f, "[%w_]+") do
+      v = v[w]
+  end
+  return v
+end
+
 local function functioncheck(...)
   local name = ...
   local t = {select(2, ...)}  -- arg types
 
   -- improve?
-  local obj = assert(loadstring('return ' .. name))()
-
+  --[[OLD
+      local obj = assert(loadstring('return ' .. name))()
+  --]]
+  local obj = getfield(name)
+  
   local nparams = 0
   for i=1,#t do
     if t[i] == '->' then break end
