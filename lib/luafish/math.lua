@@ -45,7 +45,7 @@ end
 
 local function getfiled(f)
   local v = _G
-  for w in string,gmatch(f, "[%w_]+") do
+  for w in string.gmatch(f, "[%w_]+") do
       v = v[w]
   end
   return v
