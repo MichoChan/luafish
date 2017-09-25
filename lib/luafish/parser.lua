@@ -152,7 +152,7 @@ function M.update_linecol(s, i, i_last, nline, ncol)
   end
 
   for k=i_last+1,i do
-    if k == 1 or s:match('^\n',k-1) then
+    if k - 1 == 1 or s:match('^\n',k-1) then
       nline = nline + 1
       ncol = 0
     end
