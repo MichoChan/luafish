@@ -10,14 +10,34 @@ local M = {}; M.__index = M
 
 -- AST node type.
 local ASTNode = {}
-function ASTNode:__tostring()
+  function ASTNode:__tostring()
   local ts = {}
   ts[#ts+1] = 'tag=' .. string.format("%q", self.tag)
+  ts[#ts+1] = 'nline=' .. self.nline
+  ts[#ts+1] = 'pos=' .. self.pos 
   for i,v in ipairs(self) do
     if type(v) == "string" then
       ts[#ts+1] = string.format("%q", v)
     else
       ts[#ts+1] = tostring(v)
+    end
+  end
+  if self.scope then
+    ts[#ts+1] = 'scope='
+    for k, _ in pairs(self.scope) do
+        ts[#ts] = ts[#ts] .. k .. ',' 
+    end
+  end
+  if self.env then
+    ts[#ts+1] = 'env='
+    for k, _ in pairs(self.env) do
+        ts[#ts] = ts[#ts] .. k .. ','
+    end
+  end
+  if self.init then
+    ts[#ts+1] = 'init='
+    for k, _ in pairs(self.init) do
+        ts[#ts] = ts[#ts] .. k .. ','
     end
   end
   return '{' .. table.concat(ts, ',') .. '}'
@@ -150,7 +170,6 @@ function M.update_linecol(s, i, i_last, nline, ncol)
     nline = nline - 1
     ncol = 0
   end
-
   for k=i_last+1,i do
     if k - 1 == 1 or s:match('^\n',k-1) then
       nline = nline + 1
@@ -161,23 +180,22 @@ function M.update_linecol(s, i, i_last, nline, ncol)
   return i, nline, ncol
 end
 
-
 local function build_grammar(self)
   local grammar = {'chunk'}
 
   local name_simple =
-    ws^-1 * C(idsafe * (idsafe + digit)^0 - anykeyword * -idsafe)
+    C(idsafe * (idsafe + digit)^0 - anykeyword * -idsafe)
 
   local name =
-    (C2'Id' * name_simple)
+    (ws^-1 * C2'Id' * name_simple)
     / self.handle_identifier
 
-  local function keyword(name) return ws^-1 * P(name) * -idsafe end
+  local function keyword(name) return P(name) * -idsafe end
 
-  local function op(name) return ws^-1 * P(name) end
+  local function op(name) return P(name) end
 
   -- capture op
-  local function cop(name) return ws^-1 * C(P(name)) end
+  local function cop(name) return C(P(name)) end
   
   local function binop_helper(a, pos, op, b)
     return self.handle_binop(pos, op, a, b)
@@ -228,50 +246,50 @@ local function build_grammar(self)
   -- modified
   grammar.block = (
   --    P(function(s,i) print(s:sub(i)) end) +
-      C2'Block' * (V'stat' * op';'^-1)^0 * (V'laststat' * op';'^-1)^-1
+      C2'Block' * (V'stat' * ws^-1 * op';'^-1)^0 * (V'laststat' * ws^-1 * op';'^-1)^-1
   ) / self.handle_block
 
   grammar.stat = (
-    (C2'Assign' * V'varlist' * op'=' * V'explist')
+    (C2'Assign' * V'varlist' * ws^-1 * op'=' * V'explist')
         / self.handle_assign +
     V'functioncall' +
-    (C2'Do' * keyword'do' * V'block' * keyword'end')
+    (ws^-1 * C2'Do' * keyword'do' * V'block' * ws^-1 * keyword'end')
         / self.handle_do +
-    (C2'While' * keyword'while' * V'exp' * keyword'do' *
+    (ws^-1 * C2'While' * keyword'while' * V'exp' * ws^-1 * keyword'do' *
         V'block' * keyword'end')
         / self.handle_while +
-    (C2'Repeat' * keyword'repeat' * V'block' * keyword'until' * V'exp')
+    (ws^-1 * C2'Repeat' * keyword'repeat' * V'block' * ws^-1 * keyword'until' * V'exp')
         / self.handle_repeat +
-    (C2'If' * keyword'if' * V'exp' * keyword'then' * V'block' *
-        (keyword'elseif' * V'exp' * keyword'then' * V'block')^0 *
-        (keyword'else' * V'block')^-1 *
-        keyword'end')
+    (ws^-1 * C2'If' * keyword'if' * V'exp' * ws^-1 * keyword'then' * V'block' *
+        (ws^-1 * keyword'elseif' * V'exp' * ws^-1 * keyword'then' * V'block')^0 *
+        (ws^-1 * keyword'else' * V'block')^-1 *
+        ws^-1 * keyword'end')
         / self.handle_if +
-    (C2'For' * keyword'for' * name * op'=' * V'exp' * op',' * V'exp' *
-        (op',' * V'exp')^-1 * keyword'do' * V'block' * keyword'end')
+    (ws^-1 * C2'For' * keyword'for' * name * ws^-1 * op'=' * V'exp' * ws^-1 *op',' * V'exp' *
+        (ws^-1 * op',' * V'exp')^-1 * ws^-1 * keyword'do' * V'block' * ws^-1 * keyword'end')
         / self.handle_for + 
-    (C2'Forin' * keyword'for' * V'namelist' * keyword'in' * V'explist' *
-         keyword'do' * V'block' * keyword'end')
+    (ws^-1 * C2'Forin' * keyword'for' * V'namelist' * ws^-1 * keyword'in' * V'explist' *
+         ws^-1 * keyword'do' * V'block' * ws^-1 * keyword'end')
          / self.handle_forin +
-    (C2'FunctionDef' * keyword'function' * V'funcname' * V'funcbody')
+    (ws^-1 * C2'FunctionDef' * keyword'function' * V'funcname' * V'funcbody')
          / self.handle_functiondef +
-    (C2'LocalFunctionDef' * keyword'local' * keyword'function' * name *
+    (ws^-1 * C2'LocalFunctionDef' * keyword'local' * ws^-1 * keyword'function' * name *
          V'funcbody')
          / self.handle_localfunctiondef +
-    (C2'Local' * keyword'local' * V'namelist' * (op'=' * V'explist')^-1)
+    (ws^-1 * C2'Local' * keyword'local' * V'namelist' * (ws^-1 * op'=' * V'explist')^-1)
          / self.handle_local
   ) / self.handle_stat
 
   grammar.laststat =
-    (C2'Return' * keyword'return' * V'explist'^-1) / self.handle_return +
-    (C2'Break' * keyword'break') / self.handle_break
+    (ws^-1 * C2'Return' * keyword'return' * V'explist'^-1) / self.handle_return +
+    (ws^-1 * C2'Break' * keyword'break') / self.handle_break
 
   grammar.funcname =
-    (C2'FuncName' * name * (op'.' * name)^0 * (cop':' * name)^-1)
+    (C2'FuncName' * name * (ws^-1 * op'.' * name)^0 * (ws^-1 * cop':' * name)^-1)
         / self.handle_funcname
 
   grammar.varlist =
-    (C2'VarList' * V'var' * (op',' * V'var')^0) / self.handle_varlist
+    (C2'VarList' * V'var' * (ws^-1 * op',' * V'var')^0) / self.handle_varlist
 
   -- modified. note: was left-recursive
   grammar.var =
@@ -282,21 +300,21 @@ local function build_grammar(self)
     (C2'NameList' * name * (',' * name)^0) / self.handle_namelist
 
   grammar.explist =
-    (C2'ExpList' * (V'exp' * op',')^0 * V'exp') / self.handle_explist
+    (C2'ExpList' * (V'exp' * ws^-1 * op',')^0 * V'exp') / self.handle_explist
 
   --modified
   -- note: exp was left-recursive in binop.
   grammar.exp =
-    Ca(V'orfactor' * (C2'Or' * keyword'or' * V'orfactor' / binop_helper)^0)
+    Ca(V'orfactor' * (ws^-1 * C2'Or' * keyword'or' * V'orfactor' / binop_helper)^0)
 
   grammar.orfactor =
-    Ca(V'andfactor' * (C2'And' * keyword'and' * V'andfactor' / binop_helper)^0)
+    Ca(V'andfactor' * (ws^-1 * C2'And' * keyword'and' * V'andfactor' / binop_helper)^0)
 
   grammar.andfactor =
     Ca(V'comparefactor' * (V'compareop' * V'comparefactor' / binop_helper)^0)
 
   grammar.comparefactor =
-    (V'concatfactor' * (Cp() * cop'..' * V'concatfactor')^0) / raccum
+    (V'concatfactor' * (ws^-1 * Cp() * cop'..' * V'concatfactor')^0) / raccum
 
   grammar.concatfactor =
     Ca(V'sumfactor' * (V'sumop' * V'sumfactor' / binop_helper)^-0)
@@ -310,9 +328,9 @@ local function build_grammar(self)
 
   --ok? productfactor usage allows x^-y^z
   grammar.unaryfactor =
-    (V'term' * (Cp() * cop'^' * V'productfactor')^0) / raccum
+    (V'term' * (ws^-1 * Cp() * cop'^' * V'productfactor')^0) / raccum
 
-  grammar.compareop = Cp() * (
+  grammar.compareop = ws^-1 * Cp() * (
     cop'<=' +
     cop'<' +   -- order important
     cop'>=' +
@@ -321,18 +339,18 @@ local function build_grammar(self)
     cop'=='
   )
 
-  grammar.sumop = Cp() * (
+  grammar.sumop = ws^-1 * Cp() * (
     cop'+' +
     cop'-'
   )
 
-  grammar.productop = Cp() * (
+  grammar.productop = ws^-1 * Cp() * (
     cop'*' +
     cop'/' +
     cop'%'
   )
 
-  grammar.unaryop = Cp() * (
+  grammar.unaryop = ws^-1 * Cp() * (
     Cc'Not' * keyword'not' +
     cop'#' +
     Cc'Neg' * op'-'
@@ -340,12 +358,12 @@ local function build_grammar(self)
 
   -- modified
   grammar.term =
-    (C2'Nil' * keyword'nil') / self.handle_nil + 
-    (C2'False' * keyword'false') / self.handle_false +
-    (C2'True' * keyword'true') / self.handle_true +
-    (C2'Number' * ws^-1 * C(number)) / self.handle_number +
-    (C2'String' * ws^-1 * C(luastring)) / self.handle_string +
-    (C2'Dots' * op'...') / self.handle_dots +
+    (ws^-1 * C2'Nil' * keyword'nil') / self.handle_nil + 
+    (ws^-1 * C2'False' * keyword'false') / self.handle_false +
+    (ws^-1 * C2'True' * keyword'true') / self.handle_true +
+    (ws^-1 * C2'Number' * C(number)) / self.handle_number +
+    (ws^-1 * C2'String' * C(luastring)) / self.handle_string +
+    (ws^-1 * C2'Dots' * op'...') / self.handle_dots +
     V'function' +
     Ca(V'prefixexp' * (V'postfix' / postfix_helper)^0) +   -- modified
     V'tableconstructor'
@@ -353,18 +371,18 @@ local function build_grammar(self)
   --modified
   grammar.prefixexp =
     name +
-    (C2'Parens' * op'(' * V'exp' * op')') / self.handle_parens
+    (ws^-1 * C2'Parens' * op'(' * V'exp' * ws^-1 * op')') / self.handle_parens
 
   --modified
   grammar.postfixcall =
     C2'Call' * V'args' +
-    C2'ColonCall' * op':' *
-        ((C2'String' * name_simple) / self.handle_string) * V'args'
+    ws^-1 * C2'ColonCall' * op':' *
+        ((ws^-1 * C2'String' * name_simple) / self.handle_string) * V'args'
 
   -- modified
   grammar.postfixindex =
-    C2'Index' * op'[' * V'exp' * op']' +
-    C2'IndexShort' * op'.' * ((C2'String' * name_simple) / self.handle_string)
+    ws^-1 * C2'Index' * op'[' * V'exp' * ws^-1 * op']' +
+    ws^-1 * C2'IndexShort' * op'.' * ((ws^-1 * C2'String' * name_simple) / self.handle_string)
 
   --modified
   grammar.postfix =
@@ -384,7 +402,7 @@ local function build_grammar(self)
     (Ca(V'prefixexp' * (V'postfix' / postfix_helper * #V'postfix')^0) * V'postfixcall') / postfix_helper
 
   grammar.args = (
-    op'(' * (grammar.explist + C2'ExpList' / self.handle_explist) * op')' + -- improve style?
+   ws^-1 * op'(' * (grammar.explist + C2'ExpList' / self.handle_explist) * ws^-1 * op')' + -- improve style?
     (C2'ExpList' * V'tableconstructor') / self.handle_explist +  -- improve style?
       -- improve style?
     (C2'ExpList' * (C2'String' * ws^-1 * C(luastring) / self.handle_string)) /
@@ -392,34 +410,34 @@ local function build_grammar(self)
   ) / self.handle_args
 
   grammar['function'] = (
-    C2'Function' * keyword'function' * V'funcbody'
+    ws^-1 * C2'Function' * keyword'function' * V'funcbody'
   ) / self.handle_function
 
   grammar.funcbody =  -- improve style?
-     op'(' * (V'parlist' + C2'NameList' / self.handle_namelist) * op')'
-        * V'block' * keyword'end'
+     ws^-1 * op'(' * (V'parlist' + C2'NameList' / self.handle_namelist) * ws^-1 * op')'
+        * V'block' * ws^-1 * keyword'end'
 
   grammar.parlist = (C2'NameList' * (
     name * (',' * name)^0
-         * (op',' * (C2'VARARG' * op'...') / self.handle_vararg)^-1 +
-    (C2'VARARG' * op'...') / self.handle_vararg
+         * (ws^-1 * op',' * (ws^-1 * C2'VARARG' * op'...') / self.handle_vararg)^-1 +
+    (ws^-1 * C2'VARARG' * op'...') / self.handle_vararg
   )) / self.handle_namelist
 
   grammar.tableconstructor =
-    (C2'Table' * op'{' * V'fieldlist'^-1 * op'}') / self.handle_table
+    (ws^-1 * C2'Table' * op'{' * V'fieldlist'^-1 * ws^-1 * op'}') / self.handle_table
 
   grammar.fieldlist =
     V'field' * (V'fieldsep' * V'field')^0 * V'fieldsep'^-1
 
   --FIX: handler call?
-  grammar.field = Cp() * (
-    op'[' * V'exp' * op']' * op'=' * V'exp' +
-    ((C2'String' * name_simple) / self.handle_string * op'=' * V'exp') +
+  grammar.field = ws^-1 * Cp() * (
+    op'[' * V'exp' * ws^-1 * op']' * ws^-1 * op'=' * V'exp' +
+    ((ws^-1 * C2'String' * name_simple) / self.handle_string * ws^-1 * op'=' * V'exp') +
     Cc(true) * V'exp'
   )
 
   grammar.fieldsep =
-    op',' + op';'
+    ws^-1 * op',' + ws^-1 * op';'
 
   self.grammar = grammar
 end
@@ -530,7 +548,7 @@ function M:parse(o)
     error(tostring(o) .. " not a recognized type", 2)
   end
 
-  text = text:gsub("^#[^\n]*\n", "", 1)  -- remove any shebang line
+  --text = text:gsub("^#[^\n]*\n", "", 1)  -- remove any shebang line
                                          --FIX: and increase line number
 
   self.s = text
@@ -550,13 +568,13 @@ function M:parse(o)
 end
 
 
-if ... ~= 'luafish.parser' then
+--if ... ~= 'luafish.parser' then
 
-  local p = M()
-  local result = p:parse(...) -- note: currently raises error on fail
+--  local p = M()
+--  local result = p:parse(...) -- note: currently raises error on fail
 
-  print('return ' .. tostring(result))
-end
+-- print('return ' .. tostring(result))
+--end
 
 
 return M
